@@ -1,50 +1,56 @@
-import csv
-import statistics
-import pickle  # if you are loading a trained ML model
-def load_and_clean_csv(file_path):
-    """
-    Load CSV safely and handle missing values.
-    Numeric columns are filled with mean, Phenotype with 'Unknown'.
-    """
-    data = []
-    with open(file_path, newline='', encoding='utf-8') as csvfile:
-        reader = csv.reader(csvfile)
-        headers = next(reader)
-        
-        for row_num, row in enumerate(reader, start=2):
-            if not row:
-                continue
-            # fill missing columns
-            row_filled = []
-            for i in range(len(headers)):
-                if i >= len(row) or row[i].strip() == '':
-                    row_filled.append(None)
-                else:
-                    row_filled.append(row[i].strip())
-            data.append(row_filled)
+import streamlit as st
+import pandas as pd
+import pickle
+import os
 
-    # Fill missing numeric values
-    for col_index in range(len(headers)-1):  # assuming last column is 'Phenotype'
-        numeric_vals = [float(row[col_index]) for row in data if row[col_index] is not None]
-        col_mean = statistics.mean(numeric_vals)
-        for row in data:
-            if row[col_index] is None:
-                row[col_index] = col_mean
-            else:
-                row[col_index] = float(row[col_index])
+# ---- Safe model loading ----
+BASE_DIR = os.path.dirname(__file__)
+MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 
-    # Fill missing Phenotype
-    for row in data:
-        row[-1] = row[-1] if row[-1] is not None else "Unknown"
+try:
+    with open(MODEL_PATH, "rb") as f:
+        model = pickle.load(f)
+except FileNotFoundError:
+    st.error("Model file not found. Please make sure 'model.pkl' is in the same folder as app.py.")
+    st.stop()
 
-    return headers, data
-# Load your trained model (replace 'model.pkl' with your actual model file)
-with open("model.pkl", "rb") as f:
-    model = pickle.load(f)
-file_path = r"C:\Users\Ayesha\Desktop\project\data.csv"
-headers, data = load_and_clean_csv(file_path)
+# ---- App Title ----
+st.title("AlphaScan AI - Thalassemia Prediction")
 
-for i, row in enumerate(data, start=1):
-    features = row[:-1]  # all columns except 'Phenotype'
-    prediction = model.predict([features])
-    print(f"Row {i} Prediction: {prediction[0]}")
+# ---- CSV Upload ----
+st.subheader("Upload CSV File for Prediction")
+uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+
+if uploaded_file is not None:
+    try:
+        data = pd.read_csv(uploaded_file)
+        st.write("Data Preview:", data.head())
+
+        # Automatically detect columns (exclude non-numeric if needed)
+        feature_cols = data.select_dtypes(include=["int64", "float64"]).columns.tolist()
+        if len(feature_cols) == 0:
+            st.error("No numeric columns found in CSV for prediction.")
+        else:
+            st.write(f"Detected feature columns: {feature_cols}")
+            X = data[feature_cols]
+            predictions = model.predict(X)
+            data['Prediction'] = predictions
+            st.write("Predictions:", data)
+
+    except Exception as e:
+        st.error(f"Error reading CSV: {e}")
+
+# ---- Single Input Prediction ----
+st.subheader("Or Predict Single Input")
+try:
+    # Dynamically create inputs for numeric features (optional: you can fix the features)
+    input_data = []
+    if 'feature_cols' in locals() and feature_cols:
+        for col in feature_cols:
+            value = st.number_input(f"{col}", value=0.0)
+            input_data.append(value)
+        if st.button("Predict Single Input"):
+            pred = model.predict([input_data])
+            st.success(f"Prediction: {pred[0]}")
+except Exception as e:
+    st.error(f"Error predicting single input: {e}")
