@@ -1,4 +1,4 @@
-# --- Simple train & test pipeline
+import os
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -9,8 +9,14 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from imblearn.over_sampling import SMOTE
 import joblib
 
+# --- Get the base directory of the script
+BASE_DIR = os.path.dirname(__file__)
+
 # --- Load data
-df = pd.read_csv("/content/alphanorm.csv")  # change filename if needed
+csv_path = os.path.join(BASE_DIR, "alphanorm.csv")  # CSV in the same folder as app.py
+if not os.path.exists(csv_path):
+    raise FileNotFoundError(f"CSV file not found at {csv_path}")
+df = pd.read_csv(csv_path)
 
 # --- Basic preprocessing
 df = df.dropna().reset_index(drop=True)
@@ -53,7 +59,11 @@ for name, model in [("RandomForest", rf), ("XGBoost", xgb)]:
     print("Confusion matrix:\n", confusion_matrix(y_test, pred))
 
 # --- Save artifacts
-joblib.dump(rf, "/content/rf_model.pkl")
-joblib.dump(xgb, "/content/xgb_model.pkl")
-joblib.dump(scaler, "/content/scaler.pkl")
+rf_path = os.path.join(BASE_DIR, "rf_model.pkl")
+xgb_path = os.path.join(BASE_DIR, "xgb_model.pkl")
+scaler_path = os.path.join(BASE_DIR, "scaler.pkl")
+
+joblib.dump(rf, rf_path)
+joblib.dump(xgb, xgb_path)
+joblib.dump(scaler, scaler_path)
 print("✅ Models & scaler saved.")
