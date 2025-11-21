@@ -1,64 +1,60 @@
 import os
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from imblearn.over_sampling import SMOTE
+import streamlit as st
 import joblib
 
-# --- Get the base directory of the script
+# --- Streamlit app title
+st.title("AlphaScan AI - Thalassemia Prediction")
+
+# --- Get base directory
 BASE_DIR = os.path.dirname(__file__)
 
-# --- Load data
-csv_path = os.path.join(BASE_DIR, "alphanorm.csv")  # CSV in the same folder as app.py
-if not os.path.exists(csv_path):
-    raise FileNotFoundError(f"CSV file not found at {csv_path}")
-df = pd.read_csv(csv_path)
+# --- CSV path
+csv_path = os.path.join(BASE_DIR, "alphanorm.csv")
 
-# --- Basic preprocessing
-df = df.dropna().reset_index(drop=True)
-df['phenotype'] = df['phenotype'].str.strip().str.lower().map({
-    'normal':0, 'alpha carrier':1, 'alpha_carrier':1, 'alpha-carrier':1, 'carrier':1
-}).astype(int)
+# --- Load CSV with error handling
+try:
+    df = pd.read_csv(csv_path)
+    st.success("✅ CSV loaded successfully!")
+    st.dataframe(df.head())  # show first 5 rows
+except Exception as e:
+    st.error(f"Error loading CSV: {e}")
+    st.stop()
 
-# --- Numeric features only
-if 'sex' in df.columns:
-    df['sex'] = df['sex'].str.lower().map({'male':1,'female':0}).fillna(0).astype(int)
+# --- Load pre-trained models
+try:
+    rf = joblib.load(os.path.join(BASE_DIR, "rf_model.pkl"))
+    xgb = joblib.load(os.path.join(BASE_DIR, "xgb_model.pkl"))
+    scaler = joblib.load(os.path.join(BASE_DIR, "scaler.pkl"))
+    st.success("✅ Models loaded successfully!")
+except Exception as e:
+    st.error(f"Error loading models: {e}")
+    st.stop()
 
-X = df.select_dtypes(include=[np.number]).drop(columns=['phenotype'])
-y = df['phenotype']
+# --- User input for prediction
+st.header("Enter patient data to predict phenotype:")
 
-# --- Scale features
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+def user_input_features():
+    data = {}
+    for col in df.select_dtypes(include=[np.number]).columns:
+        data[col] = st.number_input(f"{col}", value=float(df[col].mean()))
+    return pd.DataFrame([data])
 
-# --- Train-test split
-X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled, y, test_size=0.2, stratify=y, random_state=42
-)
+input_df = user_input_features()
 
-# --- SMOTE balancing
-sm = SMOTE(random_state=42)
-X_train_bal, y_train_bal = sm.fit_resample(X_train, y_train)
+# --- Scale input
+input_scaled = scaler.transform(input_df)
 
-# --- Train RandomForest & XGB
-rf = RandomForestClassifier(n_estimators=200, random_state=42)
-xgb = XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42)
+# --- Prediction buttons
+if st.button("Predict with RandomForest"):
+    pred = rf.predict(input_scaled)[0]
+    st.write(f"Predicted phenotype: **{'Normal' if pred==0 else 'Alpha Carrier'}**")
 
-rf.fit(X_train_bal, y_train_bal)
-xgb.fit(X_train_bal, y_train_bal)
+if st.button("Predict with XGBoost"):
+    pred = xgb.predict(input_scaled)[0]
+    st.write(f"Predicted phenotype: **{'Normal' if pred==0 else 'Alpha Carrier'}**")
 
-# --- Evaluate
-for name, model in [("RandomForest", rf), ("XGBoost", xgb)]:
-    pred = model.predict(X_test)
-    print(f"\n{name} test accuracy: {accuracy_score(y_test, pred):.4f}")
-    print(classification_report(y_test, pred))
-    print("Confusion matrix:\n", confusion_matrix(y_test, pred))
-
-# --- Save artifacts
-rf_path = os.path.join(BASE_DIR, "rf_model.pkl")
-xgb_path = os.path.join(BASE_DIR, "xgb_model.pkl")
-scaler_path = os.path.join(BASE_DIR, "scaler.pkl")
+# --- Optional: show CSV summary
+if st.checkbox("Show dataset summary"):
+    st.write(df.describe())
